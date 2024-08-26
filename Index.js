@@ -1,38 +1,27 @@
-const { default: makeWASocket, DisconnectReason } = require('@adiwajshing/baileys');
-const { Boom } = require('@hapi/boom');
+const { Client, LocalAuth } = require('whatsapp-web.js');
+const { prefix, commands } = require('./commands'); // Importa os comandos e o prefixo
 
-async function connectToWhatsApp() {
-    const sock = makeWASocket();
+const client = new Client({
+    authStrategy: new LocalAuth(),
+});
 
-    sock.ev.on('connection.update', (update) => {
-        const { connection, lastDisconnect } = update;
-        if(connection === 'close') {
-            const shouldReconnect = (lastDisconnect.error)?.output?.statusCode !== DisconnectReason.loggedOut;
-            console.log('Connection closed due to', lastDisconnect.error, ', reconnecting', shouldReconnect);
-            if(shouldReconnect) {
-                connectToWhatsApp();
+client.on('message', async message => {
+    if (message.body.startsWith(prefix)) {
+        const commandBody = message.body.slice(prefix.length).trim();
+        const args = commandBody.split(/ +/);
+        const command = args.shift().toLowerCase();
+
+        if (commands[command]) {
+            try {
+                await commands[command](message, args);
+            } catch (error) {
+                console.error('Erro ao executar o comando:', error);
+                message.reply('Houve um erro ao executar o comando.');
             }
-        } else if(connection === 'open') {
-            console.log('Connected to WhatsApp');
+        } else {
+            message.reply('Comando não reconhecido.');
         }
-    });
+    }
+});
 
-    sock.ev.on('messages.upsert', async (msg) => {
-        const message = msg.messages[0];
-        if (!message.message) return;
-
-        const from = message.key.remoteJid;
-        const body = message.message.conversation || message.message.extendedTextMessage?.text;
-
-        // Exemplo de comando /iniciar que responde uma mensagem de boas-vindas
-        if (body && body.startsWith('/iniciar')) {
-            await sock.sendMessage(from, { text: '🛡️ Bem-vindo ao LordBot! Use /ajuda para ver os comandos disponíveis.' });
-        }
-
-        // Adicione outros comandos aqui
-
-    });
-}
-
-// Inicia a conexão com o WhatsApp
-connectToWhatsApp();
+client.initialize();
